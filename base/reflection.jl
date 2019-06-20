@@ -241,31 +241,6 @@ isconst(m::Module, s::Symbol) =
     ccall(:jl_is_const, Cint, (Any, Any), m, s) != 0
 
 """
-    @isdefined s -> Bool
-
-Tests whether variable `s` is defined in the current scope.
-
-See also [`isdefined`](@ref).
-
-# Examples
-```jldoctest
-julia> function f()
-           println(@isdefined x)
-           x = 3
-           println(@isdefined x)
-       end
-f (generic function with 1 method)
-
-julia> f()
-false
-true
-```
-"""
-macro isdefined(s::Symbol)
-    return Expr(:isdefined, esc(s))
-end
-
-"""
     @locals()
 
 Construct a dictionary of the names (as symbols) and values of all local
