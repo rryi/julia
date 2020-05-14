@@ -44,7 +44,7 @@ mutable struct InferenceState
 
     # cached results of calling `_methods_by_ftype`, including `min_valid` and
     # `max_valid`, to be used in inlining
-    matching_methods_cache::IdDict{Any, Tuple{Any, UInt, UInt}}
+    matching_methods_cache::IdDict{Any, Tuple{Any, UInt, UInt, Bool}}
 
     # src is assumed to be a newly-allocated CodeInfo, that can be modified in-place to contain intermediate results
     function InferenceState(result::InferenceResult, src::CodeInfo,
@@ -107,7 +107,7 @@ mutable struct InferenceState
             Vector{InferenceState}(), # callers_in_cycle
             #=parent=#nothing,
             cached, false, false, false,
-            IdDict{Any, Tuple{Any, UInt, UInt}}())
+            IdDict{Any, Tuple{Any, UInt, UInt, Bool}}())
         result.result = frame
         cached && push!(get_inference_cache(interp), result)
         return frame

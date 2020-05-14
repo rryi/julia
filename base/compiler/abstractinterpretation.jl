@@ -37,6 +37,7 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
     end
     min_valid = UInt[typemin(UInt)]
     max_valid = UInt[typemax(UInt)]
+    ambig = Int32[0]
     splitunions = 1 < countunionsplit(atype_params) <= InferenceParams(interp).MAX_UNION_SPLITTING
     if splitunions
         splitsigs = switchtupleunion(atype)
@@ -45,8 +46,8 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
             (xapplicable, min_valid[1], max_valid[1]) =
                 get!(sv.matching_methods_cache, sig_n) do
                     ms = _methods_by_ftype(sig_n, max_methods,
-                            get_world_counter(interp), min_valid, max_valid)
-                    return (ms, min_valid[1], max_valid[1])
+                            get_world_counter(interp), false, min_valid, max_valid, ambig)
+                    return (ms, min_valid[1], max_valid[1], ambig[1] != 0)
                 end
             xapplicable === false && return Any
             append!(applicable, xapplicable)
@@ -55,8 +56,8 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
         (applicable, min_valid[1], max_valid[1]) =
             get!(sv.matching_methods_cache, atype) do
                 ms = _methods_by_ftype(atype, max_methods,
-                        get_world_counter(interp), min_valid, max_valid)
-                return (ms, min_valid[1], max_valid[1])
+                        get_world_counter(interp), false, min_valid, max_valid, ambig)
+                return (ms, min_valid[1], max_valid[1], ambig[1] != 0)
             end
         if applicable === false
             # this means too many methods matched
