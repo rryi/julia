@@ -1841,7 +1841,11 @@ static void jl_verify_edges(jl_array_t *targets, jl_array_t **pvalids)
         size_t max_valid = ~(size_t)0;
         int ambig = 0;
         // TODO: possibly need to included ambiguities too (for the optimizer correctness)?
+        //uint64_t t0 = uv_hrtime();
         jl_value_t *matches = jl_matching_methods((jl_tupletype_t*)sig, -1, 0, jl_world_counter, &min_valid, &max_valid, &ambig);
+        //uint64_t t1 = uv_hrtime();
+        //jl_printf((JL_STREAM*)STDOUT_FILENO, "\n%llu ", t1 - t0);
+        //jl_static_show((JL_STREAM*)STDOUT_FILENO, (jl_value_t*)sig);
         if (matches == jl_false || jl_array_len(matches) != jl_array_len(expected)) {
             valid = 0;
         }

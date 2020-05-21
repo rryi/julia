@@ -1202,6 +1202,15 @@ void print_func_loc(JL_STREAM *s, jl_method_t *m)
     }
 }
 
+static int compare(jl_method_t *m1, jl_method_t *m2, jl_value_t *type)
+{
+    return 0;
+    //return !jl_type_morespecific(m2->sig, m1->sig) &&
+    //       !jl_type_morespecific(m1->sig, m2->sig) &&
+    //       jl_subtype(type, jl_type_intersection(m1->sig, m2->sig));
+}
+
+
 struct shadowed_matches_env {
     struct typemap_intersection_env match;
     jl_typemap_entry_t *newentry;
@@ -1225,12 +1234,17 @@ static int check_shadowed_visitor(jl_typemap_entry_t *oldentry, struct typemap_i
     jl_tupletype_t *sig = oldentry->sig;
 
     int shadowed = 0;
-    if (closure->match.issubty) { // (new)type <: (old)sig
+    int ambig = 0;
+    if (closure->match.issubty) { // (new)type <: match <: (old)sig
         // new entry is more specific
         shadowed = 1;
     }
     else if (jl_subtype((jl_value_t*)sig, (jl_value_t*)type)) {
         // old entry is more specific
+    }
+    else if (type != (jl_tupletype_t*)closure->match.type && jl_subtype((jl_value_t*)type, (jl_value_t*)sig)) { // (new)type <: (old)sig
+        // new entry is more specific
+        shadowed = 1;
     }
     else if (jl_type_morespecific_no_subtype((jl_value_t*)type, (jl_value_t*)sig)) {
         // new entry is more specific
@@ -1241,31 +1255,146 @@ static int check_shadowed_visitor(jl_typemap_entry_t *oldentry, struct typemap_i
     }
     else {
         // sort order is ambiguous
-        shadowed = 1;
+        ambig = 1;
     }
 
     // ok: record that this method definition is being partially replaced
     // (either with a real definition, or an ambiguity error)
-    if (shadowed) {
+    if (shadowed || ambig) {
         if (closure->shadowed == NULL) {
             closure->shadowed = (jl_value_t*)oldmethod;
         }
         else if (!jl_is_array(closure->shadowed)) {
+            if (ambig && compare((jl_method_t*)closure->shadowed, oldmethod, (jl_value_t*)type)) {
+                closure->shadowed = NULL;
+                return 0;
+            }
             jl_array_t *list = jl_alloc_vec_any(2);
             jl_array_ptr_set(list, 0, closure->shadowed);
             jl_array_ptr_set(list, 1, (jl_value_t*)oldmethod);
             closure->shadowed = (jl_value_t*)list;
         }
         else {
+            assert(jl_is_array(closure->shadowed));
+            if (ambig) {
+                jl_method_t **d = (jl_method_t**)jl_array_ptr_data(closure->shadowed);
+                size_t i, n = jl_array_len(closure->shadowed);
+                for (i = 0; i < n; i++) {
+                    if (compare(d[i], oldmethod, (jl_value_t*)type)) {
+                        closure->shadowed = NULL;
+                        return 0;
+                    }
+                }
+            }
             jl_array_ptr_1d_push((jl_array_t*)closure->shadowed, (jl_value_t*)oldmethod);
         }
     }
     return 1;
 }
 
+JL_DLLEXPORT jl_value_t *typejoin_ttype(jl_value_t *type)
+{
+    if (jl_is_typevar(type)) {
+        jl_value_t *ub = ((jl_tvar_t*)type)->ub;
+        jl_value_t *newub = typejoin_ttype(ub);
+        if (newub != ub || ((jl_tvar_t*)type)->lb != jl_bottom_type) {
+            JL_GC_PUSH1(&newub);
+            type = (jl_value_t*)jl_new_typevar(((jl_tvar_t*)type)->name, jl_bottom_type, newub);
+            JL_GC_POP();
+        }
+    }
+    else if (jl_is_unionall(type)) {
+        jl_value_t *body = ((jl_unionall_t*)type)->body;
+        jl_value_t *uw = jl_unwrap_unionall(body);
+        if (jl_is_datatype(uw) && ((jl_datatype_t*)uw)->name->wrapper == type)
+            return type;
+        jl_tvar_t *var = ((jl_unionall_t*)type)->var;
+        jl_value_t *newbody = typejoin_ttype(body);
+        if (body != newbody) {
+            uw = jl_unwrap_unionall(newbody);
+            if (jl_is_datatype(uw) && ((jl_datatype_t*)uw)->name->wrapper == newbody)
+                return newbody;
+        }
+        jl_value_t *newvar = NULL;
+        JL_GC_PUSH3(&newbody, &newvar, &type);
+        if (body != newbody) {
+            type = jl_type_unionall(var, newbody);
+        }
+        if (jl_is_unionall(type)) {
+            newvar = typejoin_ttype((jl_value_t*)var);
+            if ((jl_value_t*)var != newvar) {
+                type = jl_apply_type1(type, newvar);
+                if (jl_is_typevar(newvar))
+                    type = jl_new_struct(jl_unionall_type, newvar, type);
+            }
+        }
+        JL_GC_POP();
+    }
+    else if (jl_is_uniontype(type)) {
+        jl_value_t *a = ((jl_uniontype_t*)type)->a;
+        jl_value_t *b = ((jl_uniontype_t*)type)->b;
+        jl_value_t *newa = NULL;
+        jl_value_t *newb = NULL;
+        JL_GC_PUSH2(&newa, &newb);
+        newa = typejoin_ttype(a);
+        newb = typejoin_ttype(b);
+        type = (jl_value_t*)jl_any_type;
+        if (newa == newb) {
+            type = newa;
+        }
+        else {
+            newa = jl_unwrap_unionall(newa);
+            newb = jl_unwrap_unionall(newb);
+            if (jl_is_datatype(newa) && jl_is_datatype(newb)) {
+                jl_typename_t *namea = ((jl_datatype_t*)newa)->name;
+                jl_typename_t *nameb = ((jl_datatype_t*)newb)->name;
+                if (namea == nameb)
+                    type = namea->wrapper;
+            }
+        }
+        JL_GC_POP();
+    }
+    else if (jl_is_datatype(type)) {
+        if (((jl_datatype_t*)(type))->name == jl_vararg_typename) {
+            jl_value_t *t = jl_tparam(type, 0);
+            jl_value_t *n = jl_tparam(type, 1);
+            jl_value_t *newt = NULL;
+            jl_value_t *newn = NULL;
+            JL_GC_PUSH2(&newt, &newn);
+            newt = typejoin_ttype(t);
+            newn = typejoin_ttype(n);
+            if (t != newt || n != newn)
+                type = jl_wrap_vararg(newt, newn);
+            JL_GC_POP();
+        }
+        else if (jl_is_tuple_type(type)) {
+            jl_svec_t *newparams = NULL;
+            jl_value_t *newelt = NULL;
+            JL_GC_PUSH2(&newparams, &newelt);
+            size_t i, np = jl_nparams(type);
+            for (i = 0; i < np; i++) {
+                jl_value_t *elt = jl_tparam(type, i);
+                newelt = typejoin_ttype(elt);
+                if (elt != newelt) {
+                    if (!newparams) newparams = jl_svec_copy(((jl_datatype_t*)type)->parameters);
+                    jl_svecset(newparams, i, newelt);
+                }
+            }
+            if (newparams)
+                type = (jl_value_t*)jl_apply_tuple_type(newparams);
+            JL_GC_POP();
+        }
+        //else if (!((jl_datatype_t*)type)->isconcretetype) {
+        //    type = ((jl_datatype_t*)type)->name->wrapper;
+        //}
+    }
+    return type;
+}
+
 static jl_value_t *check_shadowed_matches(jl_typemap_t *defs, jl_typemap_entry_t *newentry)
 {
-    jl_tupletype_t *type = newentry->sig;
+    jl_tupletype_t *type = (jl_tupletype_t*)typejoin_ttype((jl_value_t*)newentry->sig);
+    type = newentry->sig;
     jl_tupletype_t *ttypes = (jl_tupletype_t*)jl_unwrap_unionall((jl_value_t*)type);
     size_t l = jl_nparams(ttypes);
     jl_value_t *va = NULL;
@@ -1281,11 +1410,12 @@ static jl_value_t *check_shadowed_matches(jl_typemap_t *defs, jl_typemap_entry_t
     env.match.env = jl_emptysvec;
     env.newentry = newentry;
     env.shadowed = NULL;
-    JL_GC_PUSH3(&env.match.env, &env.match.ti, &env.shadowed);
+    JL_GC_PUSH4(&type, &env.match.env, &env.match.ti, &env.shadowed);
     jl_typemap_intersection_visitor(defs, 0, &env.match);
     JL_GC_POP();
     return env.shadowed;
 }
+
 
 static void method_overwrite(jl_typemap_entry_t *newentry, jl_method_t *oldvalue)
 {
@@ -1634,7 +1764,12 @@ JL_DLLEXPORT void jl_method_table_insert(jl_methtable_t *mt, jl_method_t *method
             else
                 jl_array_del_end(mt->backedges, na - ins);
         }
+
+        //uint64_t t0 = uv_hrtime();
         oldvalue = check_shadowed_matches(mt->defs, newentry);
+        //uint64_t t1 = uv_hrtime();
+        //jl_printf((JL_STREAM*)STDOUT_FILENO, "\n%llu ", t1 - t0);
+        //jl_static_show((JL_STREAM*)STDOUT_FILENO, (jl_value_t*)method->sig);
     }
 
     if (oldvalue) {
@@ -2616,6 +2751,7 @@ static jl_value_t *ml_matches(jl_methtable_t *mt, int offs,
             return env.t;
         }
     }
+    uint64_t t0 = uv_hrtime();
     jl_typemap_intersection_visitor(defs, offs, &env.match);
     *min_valid = env.min_valid;
     *max_valid = env.max_valid;
@@ -2910,6 +3046,9 @@ static jl_value_t *ml_matches(jl_methtable_t *mt, int offs,
             cache_method(mt, &mt->cache, (jl_value_t*)mt, type, meth, world, env.min_valid, env.max_valid, tpenv);
         }
     }
+    //uint64_t t1 = uv_hrtime();
+    //jl_printf((JL_STREAM*)STDOUT_FILENO, "\n%llu ", t1 - t0);
+    //jl_static_show((JL_STREAM*)STDOUT_FILENO, (jl_value_t*)type);
     JL_GC_POP();
     if (lim >= 0 && len > lim)
         return jl_false;
