@@ -2755,16 +2755,39 @@ static jl_value_t *ml_matches(jl_methtable_t *mt, int offs,
         // now that the results are (mostly) sorted, assign group numbers to each ambiguity
         // by computing the specificity-ambiguity matrix covering this query
         uint32_t *ambig_groupid = (uint32_t*)alloca(len * sizeof(uint32_t));
+        // as we go, keep a rough count of how many methods are disjoint, which
+        // gives us a lower bound on how many methods we will be returning
+        // and lets us stop early if we reach our limit
+        int ndisjoint = 0;
         for (i = 0; i < len; i++) {
+            // can't use skip[i] here, since we still need to make sure the minmax dominates
             jl_value_t *matc = jl_array_ptr_ref(env.t, i);
             jl_method_t *m = (jl_method_t*)jl_svecref(matc, 2);
+            int subt = jl_svecref(matc, 3) == jl_true; // jl_subtype((jl_value_t*)type, (jl_value_t*)m->sig)
             ambig_groupid[i] = i;
+            int disjoint = 1;
             for (j = i; j > 0; j--) {
                 jl_value_t *matc2 = jl_array_ptr_ref(env.t, j - 1);
                 jl_method_t *m2 = (jl_method_t*)jl_svecref(matc2, 2);
-                if (!jl_has_empty_intersection(m->sig, m2->sig)) {
+                int subt2 = jl_svecref(matc2, 3) == jl_true; // jl_subtype((jl_value_t*)type, (jl_value_t*)m2->sig)
+                if (skip[j - 1]) {
+                    // if there was a minmax method, we can just pretend these are all in the same group
+                    // they're all together but unsorted in the list, since we'll drop them all later anyways
+                    assert(subt2);
+                    disjoint = 0;
+                    ambig_groupid[i] = j - 1; // ambiguity covering range [i:j)
+                }
+                else if (subt || subt2 || !jl_has_empty_intersection(m->sig, m2->sig)) {
                     if (!jl_type_morespecific((jl_value_t*)m2->sig, (jl_value_t*)m->sig))
                         ambig_groupid[i] = j - 1; // ambiguity covering range [i:j)
+                    disjoint = 0;
+                }
+            }
+            if (disjoint && lim >= 0) {
+                ndisjoint += 1;
+                if (ndisjoint > lim) {
+                    JL_GC_POP();
+                    return jl_false;
                 }
             }
         }
@@ -2811,6 +2834,8 @@ static jl_value_t *ml_matches(jl_methtable_t *mt, int offs,
                 jl_value_t *matc = jl_array_ptr_ref(env.t, i);
                 jl_method_t *m = (jl_method_t*)jl_svecref(matc, 2);
                 jl_value_t *ti = jl_svecref(matc, 0);
+                if (jl_svecref(matc, 3) == jl_true)
+                    break; // remaining matches are ambiguous or already skipped
                 for (j = 0; j < i; j++) {
                     jl_value_t *matc2 = jl_array_ptr_ref(env.t, j);
                     jl_method_t *m2 = (jl_method_t*)jl_svecref(matc2, 2);
@@ -2856,16 +2881,18 @@ static jl_value_t *ml_matches(jl_methtable_t *mt, int offs,
                 jl_value_t *matc = jl_array_ptr_ref(env.t, i);
                 jl_method_t *m = (jl_method_t*)jl_svecref(matc, 2);
                 jl_value_t *ti = jl_svecref(matc, 0);
+                int subt = jl_svecref(matc, 3) == jl_true; // jl_subtype((jl_value_t*)type, (jl_value_t*)m->sig)
                 char ambig1 = 0;
                 for (j = agid; j < len && ambig_groupid[j] == agid; j++) {
                     if (j == i)
                         continue;
                     jl_value_t *matc2 = jl_array_ptr_ref(env.t, j);
                     jl_method_t *m2 = (jl_method_t*)jl_svecref(matc2, 2);
+                    int subt2 = jl_svecref(matc2, 3) == jl_true; // jl_subtype((jl_value_t*)type, (jl_value_t*)m2->sig)
                     // if their intersection contributes to the ambiguity cycle
-                    if (!jl_has_empty_intersection(ti, m2->sig)) {
+                    if (subt || subt2 || !jl_has_empty_intersection(ti, m2->sig)) {
                         // and the contribution of m is ambiguous with the portion of the cycle from m2
-                        if (jl_subtype(ti, m2->sig)) {
+                        if (subt2 || jl_subtype(ti, m2->sig)) {
                             // but they aren't themselves simply ordered (here
                             // we don't consider that a third method might be
                             // disrupting that ordering and just consider them
