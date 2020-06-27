@@ -144,14 +144,14 @@ function _searchindex(s::Union{AbstractString,ByteArray},
                       t::Union{AbstractString,AbstractChar,Int8,UInt8},
                       i::Integer)
     if isempty(t)
-        return 1 <= i <= nextind(s,lastindex(s)) ? i :
+        return 1 <= i <= nextind(s,lastindex(s))::Int ? i :
                throw(BoundsError(s, i))
     end
     t1, trest = Iterators.peel(t)
     while true
         i = findnext(isequal(t1),s,i)
         if i === nothing return 0 end
-        ii = nextind(s, i)
+        ii = nextind(s, i)::Int
         a = Iterators.Stateful(trest)
         matched = all(splat(==), zip(SubString(s, ii), a))
         (isempty(a) && matched) && return i

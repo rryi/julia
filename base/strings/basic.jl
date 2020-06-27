@@ -174,10 +174,10 @@ julia> sizeof("∀")
 3
 ```
 """
-sizeof(s::AbstractString) = ncodeunits(s) * sizeof(codeunit(s))
+sizeof(s::AbstractString) = (ncodeunits(s) * sizeof(codeunit(s)))::Int
 firstindex(s::AbstractString) = 1
-lastindex(s::AbstractString) = thisind(s, ncodeunits(s))
-isempty(s::AbstractString) = iszero(ncodeunits(s))
+lastindex(s::AbstractString) = thisind(s, ncodeunits(s)::Int)
+isempty(s::AbstractString) = iszero(ncodeunits(s)::Int)
 
 function getindex(s::AbstractString, i::Integer)
     @boundscheck checkbounds(s, i)
@@ -434,7 +434,7 @@ ERROR: BoundsError: attempt to access 2-codeunit String at index [-1]
 thisind(s::AbstractString, i::Integer) = thisind(s, Int(i))
 
 function thisind(s::AbstractString, i::Int)
-    z = ncodeunits(s) + 1
+    z = ncodeunits(s)::Int + 1
     i == z && return i
     @boundscheck 0 ≤ i ≤ z || throw(BoundsError(s, i))
     @inbounds while 1 < i && !(isvalid(s, i)::Bool)
@@ -602,9 +602,9 @@ isascii(c::AbstractChar) = UInt32(c) < 0x80
 ## string map, filter ##
 
 function map(f, s::AbstractString)
-    out = StringVector(max(4, sizeof(s)÷sizeof(codeunit(s))))
+    out = StringVector(max(4, sizeof(s)::Int÷sizeof(codeunit(s)::Type{<:Union{UInt8,UInt16,UInt32}})))
     index = UInt(1)
-    for c in s
+    for c::AbstractChar in s
         c′ = f(c)
         isa(c′, AbstractChar) || throw(ArgumentError(
             "map(f, s::AbstractString) requires f to return AbstractChar; " *

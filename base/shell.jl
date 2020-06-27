@@ -7,7 +7,7 @@ const shell_special = "#{}()[]<>|&*?~;"
 # strips the end but respects the space when the string ends with "\\ "
 function rstrip_shell(s::AbstractString)
     c_old = nothing
-    for (i, c) in Iterators.reverse(pairs(s))
+    for (i::Int, c::AbstractChar) in Iterators.reverse(pairs(s))
         ((c == '\\') && c_old == ' ') && return SubString(s, 1, i+1)
         isspace(c) || return SubString(s, 1, i)
         c_old = c
@@ -38,8 +38,8 @@ function shell_parse(str::AbstractString, interpolate::Bool=true;
         end
     end
     function consume_upto(j)
-        update_arg(s[i:prevind(s, j)])
-        i = something(peek(st), (lastindex(s)+1,'\0'))[1]
+        update_arg(s[i:prevind(s, j)::Int])
+        i = something(peek(st), (lastindex(s)::Int+1,'\0'))[1]
     end
     function append_arg()
         if isempty(arg); arg = Any["",]; end
@@ -47,7 +47,7 @@ function shell_parse(str::AbstractString, interpolate::Bool=true;
         arg = []
     end
 
-    for (j, c) in st
+    for (j::Int, c::AbstractChar) in st
         if !in_single_quotes && !in_double_quotes && isspace(c)
             consume_upto(j)
             append_arg()

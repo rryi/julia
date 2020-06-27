@@ -838,7 +838,7 @@ function _methods_by_ftype(@nospecialize(t), lim::Int, world::UInt)
     return _methods_by_ftype(t, lim, world, UInt[typemin(UInt)], UInt[typemax(UInt)])
 end
 function _methods_by_ftype(@nospecialize(t), lim::Int, world::UInt, min::Array{UInt,1}, max::Array{UInt,1})
-    return ccall(:jl_matching_methods, Any, (Any, Cint, Cint, UInt, Ptr{UInt}, Ptr{UInt}), t, lim, 0, world, min, max)
+    return ccall(:jl_matching_methods, Any, (Any, Cint, Cint, UInt, Ptr{UInt}, Ptr{UInt}), t, lim, 0, world, min, max)::Union{Vector{Any},Bool}
 end
 
 # high-level, more convenient method lookup functions
@@ -875,18 +875,22 @@ A list of modules can also be specified as an array.
     At least Julia 1.4 is required for specifying a module.
 """
 function methods(@nospecialize(f), @nospecialize(t),
-                 @nospecialize(mod::Union{Module,AbstractArray{Module},Nothing}=nothing))
-    if mod isa Module
-        mod = (mod,)
-    end
+                 @nospecialize(mod::Union{Tuple{Module},AbstractArray{Module},Nothing}=nothing))
     if isa(f, Core.Builtin)
         throw(ArgumentError("argument is not a generic function"))
     end
     t = to_tuple_type(t)
     world = typemax(UInt)
-    MethodList(Method[m[3] for m in _methods(f, t, -1, world) if mod === nothing || m[3].module in mod],
-               typeof(f).name.mt)
+    ms = Method[]
+    for sig_params_meth in _methods(f, t, -1, world)
+        meth = sig_params_meth[3]::Method
+        if mod === nothing || meth.module ∈ mod
+            push!(ms, meth)
+        end
+    end
+    return MethodList(ms, typeof(f).name.mt)
 end
+methods(@nospecialize(f), @nospecialize(t), mod::Module) = methods(f, t, (mod,))
 
 methods(f::Core.Builtin) = MethodList(Method[], typeof(f).name.mt)
 

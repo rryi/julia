@@ -605,8 +605,8 @@ function bin(x::Unsigned, pad::Integer, neg::Bool)
     i = neg + max(pad,sizeof(x)<<3-leading_zeros(x))
     a = StringVector(i)
     while i > neg
-        @inbounds a[i] = 48+(x&0x1)
-        x >>= 1
+        @inbounds a[i] = (0x30+(x&0x1)::Unsigned)::Unsigned
+        x = (x >> 1)::Unsigned
         i -= 1
     end
     if neg; @inbounds a[1]=0x2d; end
