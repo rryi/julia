@@ -613,10 +613,29 @@ else
 endif
 
 # On Windows, we want shared library files to end up in $(build_bindir), instead of $(build_libdir)
+# We also don't really have a private bindir on windows right now, due to lack of RPATH.
 ifeq ($(OS),WINNT)
 build_shlibdir := $(build_bindir)
+shlibdir := $(bindir)
+private_shlibdir := $(bindir)
 else
 build_shlibdir := $(build_libdir)
+shlibdir := $(libdir)
+private_shlibdir := $(private_libdir)
+endif
+
+# If we're on windows, don't do versioned shared libraries.  If we're on OSX,
+# put the version number before the .dylib.  Otherwise, put it after.
+ifeq ($(OS), WINNT)
+JL_MAJOR_MINOR_SHLIB_EXT := $(SHLIB_EXT)
+else
+ifeq ($(OS), Darwin)
+JL_MAJOR_MINOR_SHLIB_EXT := $(SOMAJOR).$(SOMINOR).$(SHLIB_EXT)
+JL_MAJOR_SHLIB_EXT := $(SOMAJOR).$(SHLIB_EXT)
+else
+JL_MAJOR_MINOR_SHLIB_EXT := $(SHLIB_EXT).$(SOMAJOR).$(SOMINOR)
+JL_MAJOR_SHLIB_EXT := $(SHLIB_EXT).$(SOMAJOR)
+endif
 endif
 
 ifeq ($(OS), FreeBSD)
@@ -1448,6 +1467,42 @@ JULIA_EXECUTABLE := $(JULIA_EXECUTABLE_$(JULIA_BUILD_MODE))
 JULIA_SYSIMG_debug := $(build_private_libdir)/sys-debug.$(SHLIB_EXT)
 JULIA_SYSIMG_release := $(build_private_libdir)/sys.$(SHLIB_EXT)
 JULIA_SYSIMG := $(JULIA_SYSIMG_$(JULIA_BUILD_MODE))
+
+ifeq ($(OS),WINNT)
+define dep_lib_path
+$(subst /,\\\\,$(call rel_path,$(1),$(2)))
+endef
+else
+define dep_lib_path
+$(call rel_path,$(1),$(2))
+endef
+endif
+
+# This whole mess is because we have different relative paths for dependencies at build-time
+# versus install-time.  Eventually, these will all be locked away in artifacts directories,
+# so much of this variation will be gone, (not completely, as we'll still need to support
+# from-source builds) but it will be much cleaner.
+define argmaxlen
+$(if $(1),$(word 1,$(sort $(1))),$(1))
+endef
+LIBGCC_DEP_NAME = $(call argmaxlen,$(notdir $(wildcard $(build_shlibdir)/libgcc_s*.$(SHLIB_EXT)*)))
+LIBGCC_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBGCC_DEP_NAME))
+LIBGCC_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBGCC_DEP_NAME))
+
+LIBLLVM_DEP_NAME = $(call argmaxlen,$(notdir $(wildcard $(build_shlibdir)/libLLVM*jl.$(SHLIB_EXT)*)))
+LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBGCC_DEP_NAME))
+LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBGCC_DEP_NAME))
+
+LIBJULIA_BUILD_DEPLIB := $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
+LIBJULIA_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
+
+LIBJULIA_DEBUG_BUILD_DEPLIB := $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/libjulia-debug.$(JL_MAJOR_MINOR_SHLIB_EXT))
+LIBJULIA_DEBUG_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia-debug.$(JL_MAJOR_MINOR_SHLIB_EXT))
+
+LOADER_BUILD_DEP_LIBS = $(LIBGCC_BUILD_DEPLIB):$(LIBLLVM_BUILD_DEPLIB):$(LIBJULIA_BUILD_DEPLIB)
+LOADER_DEBUG_BUILD_DEP_LIBS = $(LIBGCC_BUILD_DEPLIB):$(LIBLLVM_BUILD_DEPLIB):$(LIBJULIA_DEBUG_BUILD_DEPLIB)
+LOADER_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_INSTALL_DEPLIB)
+LOADER_DEBUG_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_DEBUG_INSTALL_DEPLIB)
 
 # Colors for make
 ifndef VERBOSE
