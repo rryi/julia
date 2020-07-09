@@ -274,10 +274,77 @@ end
 
 default_group(file) = Symbol(splitext(basename(file))[1])
 
+function issimple(@nospecialize val)
+    val isa String && return true
+    val isa Symbol && return true
+    val isa QuoteNode && return true
+    val isa Number && return true
+    val isa Char && return true
+    if val isa Expr
+        val.head === :quote && issimple(val[1]) && return true
+        val.head === :inert && return true
+    end
+    return false
+end
+function issimplekw(@nospecialize val)
+    if val isa Expr
+        if val.head === :kw
+            val = val.args[2]
+            if val isa Expr && val.head === :escape
+                issimple(val.args[1]) && return true
+            end
+        end
+    end
+    return false
+end
+
 # Generate code for logging macros
 function logmsg_code(_module, file, line, level, message, exs...)
     log_data = process_logmsg_exs(_module, file, line, level, message, exs...)
-    quote
+    if !isa(message, Symbol) && issimple(message) && isempty(log_data.kwargs)
+        message = quote
+            msg = $(message)
+            kwargs = (;)
+            true
+        end
+    elseif issimple(message) && all(issimplekw, log_data.kwargs)
+        # if message and kwargs are just values and variables, we can avoid try/catch
+        # complexity by adding the code for testing the UndefVarError by hand
+        checkerrors = nothing
+        for kwarg in reverse(log_data.kwargs)
+            if isa(kwarg.args[2].args[1], Symbol)
+                checkerrors = Expr(:if, Expr(:isdefined, kwarg.args[2]), checkerrors, Expr(:call, Expr(:core, :UndefVarError), QuoteNode(kwarg.args[2].args[1])))
+            end
+        end
+        if isa(message, Symbol)
+            message = esc(message)
+            checkerrors = Expr(:if, Expr(:isdefined, message), checkerrors, Expr(:call, Expr(:core, :UndefVarError), QuoteNode(message.args[1])))
+        end
+        message = quote
+            let err = $checkerrors
+                if err === nothing
+                    msg = $(message)
+                    kwargs = (;$(log_data.kwargs...))
+                    true
+                else
+                    logging_error(logger, level, _module, group, id, file, line, err, false)
+                    false
+                end
+            end
+        end
+    else
+        message = quote
+            try
+                msg = $(esc(message))
+                kwargs = (;$(log_data.kwargs...))
+                true
+            catch err
+                logging_error(logger, level, _module, group, id, file, line, err, true)
+                false
+            end
+        end
+    end
+    return quote
         level = $level
         std_level = convert(LogLevel, level)
         if std_level >= getindex(_min_enabled_level)
@@ -291,15 +358,10 @@ function logmsg_code(_module, file, line, level, message, exs...)
                 if _invoked_shouldlog(logger, level, _module, group, id)
                     file = $(log_data._file)
                     line = $(log_data._line)
-                    try
-                        msg = $(esc(message))
-                        handle_message(
-                            logger, level, msg, _module, group, id, file, line;
-                            $(log_data.kwargs...)
-                        )
-                    catch err
-                        logging_error(logger, level, _module, group, id, file, line, err)
-                    end
+                    local msg, kwargs
+                    $(message) && handle_message(
+                        logger, level, msg, _module, group, id, file, line;
+                        kwargs...)
                 end
             end
         end
@@ -313,7 +375,7 @@ function process_logmsg_exs(_orig_module, _file, _line, level, message, exs...)
     kwargs = Any[]
     for ex in exs
         if ex isa Expr && ex.head === :(=) && ex.args[1] isa Symbol
-            k,v = ex.args
+            k, v = ex.args
             if !(k isa Symbol)
                 throw(ArgumentError("Expected symbol for key in key value pair `$ex`"))
             end
@@ -359,29 +421,21 @@ function default_group_code(file)
 end
 
 
-# Report an error in log message creation (or in the logger itself).
+# Report an error in log message creation
 @noinline function logging_error(logger, level, _module, group, id,
-                                 filepath, line, @nospecialize(err))
+                                 filepath, line, @nospecialize(err), real::Bool)
     if !_invoked_catch_exceptions(logger)
-        rethrow(err)
+        real ? rethrow(err) : throw(err)
     end
-    try
-        msg = "Exception while generating log record in module $_module at $filepath:$line"
-        handle_message(
-            logger, Error, msg, _module, :logevent_error, id, filepath, line;
-            exception=(err,catch_backtrace())
-        )
-    catch err2
-        try
-            # Give up and write to stderr, in three independent calls to
-            # increase the odds of it getting through.
-            print(stderr, "Exception handling log message: ")
-            println(stderr, err)
-            println(stderr, "  module=$_module  file=$filepath  line=$line")
-            println(stderr, "  Second exception: ", err2)
-        catch
-        end
-    end
+    msg = try
+              "Exception while generating log record in module $_module at $filepath:$line"
+          catch ex
+              "Exception handling log message: $ex"
+          end
+    err = real ? catch_backtrace() : backtrace()
+    handle_message(
+        logger, Error, msg, _module, :logevent_error, id, filepath, line;
+        exception=err)
     nothing
 end
 
@@ -572,8 +626,9 @@ min_enabled_level(logger::SimpleLogger) = logger.min_level
 catch_exceptions(logger::SimpleLogger) = false
 
 function handle_message(logger::SimpleLogger, level, message, _module, group, id,
-                        filepath, line; maxlog=nothing, kwargs...)
-    if maxlog !== nothing && maxlog isa Integer
+                        filepath, line; kwargs...)
+    maxlog = get(kwargs, :maxlog, nothing)
+    if maxlog isa Integer
         remaining = get!(logger.message_limits, id, maxlog)
         logger.message_limits[id] = remaining - 1
         remaining > 0 || return
@@ -587,6 +642,7 @@ function handle_message(logger::SimpleLogger, level, message, _module, group, id
         println(iob, "│ ", msglines[i])
     end
     for (key, val) in kwargs
+        key === :maxlog && continue
         println(iob, "│   ", key, " = ", val)
     end
     println(iob, "└ @ ", something(_module, "nothing"), " ",
