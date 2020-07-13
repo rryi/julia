@@ -1489,9 +1489,16 @@ LIBGCC_DEP_NAME = $(call argmaxlen,$(notdir $(wildcard $(build_shlibdir)/libgcc_
 LIBGCC_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBGCC_DEP_NAME))
 LIBGCC_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBGCC_DEP_NAME))
 
+# libstdc++ isn't available at a stable location at build time, but that's okay.
+# It will be once we're using artifacts, and even without artifacts, the system
+# libstdc++ is fine during build time, it's only when installing a binary distribution
+# that we care about loading this particular library first.
+LIBSTDCXX_DEP_NAME = $(call argmaxlen,$(notdir $(wildcard $(private_shlibdir)/libstdc++*.$(SHLIB_EXT)*)))
+LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBSTDCXX_DEP_NAME))
+
 LIBLLVM_DEP_NAME = $(call argmaxlen,$(notdir $(wildcard $(build_shlibdir)/libLLVM*jl.$(SHLIB_EXT)*)))
-LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBGCC_DEP_NAME))
-LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBGCC_DEP_NAME))
+LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBLLVM_DEP_NAME))
+LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBLLVM_DEP_NAME))
 
 LIBJULIA_BUILD_DEPLIB := $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
 LIBJULIA_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
@@ -1501,8 +1508,8 @@ LIBJULIA_DEBUG_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libju
 
 LOADER_BUILD_DEP_LIBS = $(LIBGCC_BUILD_DEPLIB):$(LIBLLVM_BUILD_DEPLIB):$(LIBJULIA_BUILD_DEPLIB)
 LOADER_DEBUG_BUILD_DEP_LIBS = $(LIBGCC_BUILD_DEPLIB):$(LIBLLVM_BUILD_DEPLIB):$(LIBJULIA_DEBUG_BUILD_DEPLIB)
-LOADER_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_INSTALL_DEPLIB)
-LOADER_DEBUG_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_DEBUG_INSTALL_DEPLIB)
+LOADER_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBSTDCXX_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_INSTALL_DEPLIB)
+LOADER_DEBUG_INSTALL_DEP_LIBS = $(LIBGCC_INSTALL_DEPLIB):$(LIBSTDCXX_INSTALL_DEPLIB):$(LIBLLVM_INSTALL_DEPLIB):$(LIBJULIA_DEBUG_INSTALL_DEPLIB)
 
 # Colors for make
 ifndef VERBOSE
