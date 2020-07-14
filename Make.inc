@@ -1504,7 +1504,7 @@ endif
 ifeq ($(OS), WINNT)
 LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/LLVM*.$(SHLIB_EXT)*)
 else
-LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libLLVM*.$(SHLIB_EXT)*)
+LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libLLVM-*jl.$(SHLIB_EXT)*)
 endif
 LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBLLVM_DEP_NAME))
 LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBLLVM_DEP_NAME))
