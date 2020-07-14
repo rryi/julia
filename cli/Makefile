@@ -20,7 +20,7 @@ endif
 #LDFLAGS += -static
 ifeq ($(OS),WINNT)
 LOADER_LDFLAGS += -municode -mconsole -ffreestanding -nostdlib \
-	            --disable-auto-import --disable-runtime-pseudo-reloc \
+	              --disable-auto-import --disable-runtime-pseudo-reloc \
 	              -lntdll -lkernel32 -lpsapi
 else ifeq ($(OS),Linux)
 LOADER_LDFLAGS += -ldl  -rdynamic
@@ -43,9 +43,9 @@ all: release debug
 release debug :  % : julia-%
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(HEADERS)
-	@$(call PRINT_CC, $(CC) $(LOADER_CFLAGS) $(SHIPFLAGS) -c $< -o $@)
+	@$(call PRINT_CC, $(CC) $(SHIPFLAGS) $(LOADER_CFLAGS) -c $< -o $@)
 $(BUILDDIR)/%.dbg.obj: $(SRCDIR)/%.c $(HEADERS)
-	@$(call PRINT_CC, $(CC) $(LOADER_CFLAGS) $(DEBUGFLAGS) -c $< -o $@)
+	@$(call PRINT_CC, $(CC) $(DEBUGFLAGS) $(LOADER_CFLAGS) -c $< -o $@)
 
 ifeq ($(OS),WINNT)
 ifneq ($(USEMSVC), 1)

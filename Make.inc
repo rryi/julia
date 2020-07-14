@@ -1471,7 +1471,7 @@ JULIA_SYSIMG := $(JULIA_SYSIMG_$(JULIA_BUILD_MODE))
 
 
 define find_lib_name
-$$(basename $$(echo $(1) | sort | head -1))
+$$(basename $$(echo $(1) | sort -r | head -1))
 endef
 
 define dep_lib_path
@@ -1501,7 +1501,7 @@ else ifeq ($(OS), Linux)
 LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/libstdc++.so.6)
 endif
 
-LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libLLVM-?jl.$(SHLIB_EXT)*)
+LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/*LLVM*.$(SHLIB_EXT)*)
 LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBLLVM_DEP_NAME))
 LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBLLVM_DEP_NAME))
 
