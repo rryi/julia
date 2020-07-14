@@ -180,8 +180,10 @@ int load_repl(const char * exe_dir, int argc, char * argv[])
 }
 
 // Empty DLL main entrypoint to silence warning
+#ifdef _OS_WINDOWS_
 int __stdcall DllMainCRTStartup(void* instance, unsigned reason, void* reserved) {
 }
+#endif
 
 #ifdef __cplusplus
 } // extern "C"

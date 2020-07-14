@@ -1471,7 +1471,7 @@ JULIA_SYSIMG := $(JULIA_SYSIMG_$(JULIA_BUILD_MODE))
 
 
 define find_lib_name
-$$(basename $$(echo $(1) | sort -r | head -1))
+$$(basename $$(ls $(1) | sort -r | head -1))
 endef
 
 define dep_lib_path
@@ -1494,14 +1494,18 @@ LIBGCC_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBG
 # It will be once we're using artifacts, and even without artifacts, the system
 # libstdc++ is fine during build time, it's only when installing a binary distribution
 # that we care about loading this particular library first.  We also only care about
-# libstdc++ on Linux and Windows; FreeBSD and MacOS use libc++ which we don't ship.
+# libstdc++ on Linux and Windows; FreeBSD and MacOS use libc++ which we don't ship (yet).
 ifeq ($(OS), WINNT)
 LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/libstdc++-6.dll)
 else ifeq ($(OS), Linux)
 LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/libstdc++.so.6)
 endif
 
-LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/*LLVM*.$(SHLIB_EXT)*)
+ifeq ($(OS), WINNT)
+LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/LLVM*.$(SHLIB_EXT)*)
+else
+LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libLLVM*.$(SHLIB_EXT)*)
+endif
 LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBLLVM_DEP_NAME))
 LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBLLVM_DEP_NAME))
 

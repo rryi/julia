@@ -16,6 +16,16 @@
 #include <dlfcn.h>
 #endif
 
+// Borrow definitions from `julia.h`
+#if defined(__GNUC__)
+#  define JL_CONST_FUNC __attribute__((const))
+#elif defined(_COMPILER_MICROSOFT_)
+#  define JL_CONST_FUNC __declspec(noalias)
+#else
+#  define JL_CONST_FUNC
+#endif
+
+
 // Declarations from `loader_lib.c` and `loader_win_utils.c`
 extern const char * get_exe_dir();
 extern int load_repl(const char *, int, char **);
