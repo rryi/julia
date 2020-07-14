@@ -262,7 +262,7 @@ endif
 
 
 define stringreplace
-	$(build_depsbindir)/stringreplace $$(strings -t x - $1 | grep '$2' | awk '{print $$1;}') '$3' 255 "$(call cygpath_w,$1)"
+	$(build_depsbindir)/stringreplace $$(strings -t x - $1 | grep $2 | awk '{print $$1;}') $3 255 "$(call cygpath_w,$1)"
 endef
 
 # Run fixup-libgfortran on all platforms but Windows and FreeBSD. On FreeBSD we
@@ -413,7 +413,9 @@ endif
 endif
 
 ifneq ($(LOADER_BUILD_DEP_LIBS),$(LOADER_INSTALL_DEP_LIBS))
-	# Next, overwrite relative path to libjulia in our loaders:
+	# Next, overwrite relative path to libjulia in our loaders if $(LOADER_BUILD_DEP_LIBS) != $(LOADER_INSTALL_DEP_LIBS)
+	echo LOADER_BUILD_DEP_LIBS=$(LOADER_BUILD_DEP_LIBS)
+	echo LOADER_INSTALL_DEP_LIBS=$(LOADER_INSTALL_DEP_LIBS)
 	$(call stringreplace,$(DESTDIR)$(bindir)/julia,$(LOADER_BUILD_DEP_LIBS)$$,$(LOADER_INSTALL_DEP_LIBS))
 	$(call stringreplace,$(DESTDIR)$(shlibdir)/libjulialoader.$(JL_MAJOR_MINOR_SHLIB_EXT),$(LOADER_BUILD_DEP_LIBS)$$,$(LOADER_INSTALL_DEP_LIBS))
 
@@ -443,6 +445,12 @@ endif
 ifeq ($(DARWIN_FRAMEWORK),1)
 	$(MAKE) -C $(JULIAHOME)/contrib/mac/framework frameworknoinstall
 endif
+ifeq ($(OS),Linux)
+ifeq ($(prefix),$(abspath julia-$(JULIA_COMMIT)))
+	# Only fixup libstdc++ if `prefix` is not set.
+	-$(JULIAHOME)/contrib/fixup-libstdc++.sh $(DESTDIR)$(libdir) $(DESTDIR)$(private_libdir)
+endif
+endif
 
 distclean:
 	-rm -fr $(BUILDROOT)/julia-*.tar.gz $(BUILDROOT)/julia*.exe $(BUILDROOT)/julia-$(JULIA_COMMIT)
@@ -465,9 +473,7 @@ endif
 	@$(MAKE) -C $(BUILDROOT) -f $(JULIAHOME)/Makefile install
 	cp $(JULIAHOME)/LICENSE.md $(BUILDROOT)/julia-$(JULIA_COMMIT)
 ifeq ($(OS), Linux)
-	-$(JULIAHOME)/contrib/fixup-libstdc++.sh $(DESTDIR)$(libdir) $(DESTDIR)$(private_libdir)
-
-	# Copy over any bundled ca certs we picked up from the system during buildi
+	# Copy over any bundled ca certs we picked up from the system during build
 	-cp $(build_datarootdir)/julia/cert.pem $(DESTDIR)$(datarootdir)/julia/
 endif
 ifeq ($(OS), WINNT)
