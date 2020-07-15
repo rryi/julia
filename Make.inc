@@ -1468,46 +1468,9 @@ JULIA_SYSIMG_debug := $(build_private_libdir)/sys-debug.$(SHLIB_EXT)
 JULIA_SYSIMG_release := $(build_private_libdir)/sys.$(SHLIB_EXT)
 JULIA_SYSIMG := $(JULIA_SYSIMG_$(JULIA_BUILD_MODE))
 
-
-
-define find_lib_name
-$$(basename $$(ls $(1) | sort -r | head -1))
-endef
-
 define dep_lib_path
 $$($(PYTHON) $(call python_cygpath,$(JULIAHOME)/contrib/relative_path.py) $(1) $(2))
 endef
-
-define dep_lib_join
-$$(echo $(1) | tr ' ' ':')
-endef
-
-# This whole mess is because we have different relative paths for dependencies at build-time
-# versus install-time.  Eventually, these will all be locked away in artifacts directories,
-# so much of this variation will be gone, (not completely, as we'll still need to support
-# from-source builds) but it will be much cleaner.
-LIBGCC_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libgcc_s*.$(SHLIB_EXT)*)
-LIBGCC_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBGCC_DEP_NAME))
-LIBGCC_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBGCC_DEP_NAME))
-
-# libstdc++ isn't available at a stable location at build time, but that's okay.
-# It will be once we're using artifacts, and even without artifacts, the system
-# libstdc++ is fine during build time, it's only when installing a binary distribution
-# that we care about loading this particular library first.  We also only care about
-# libstdc++ on Linux and Windows; FreeBSD and MacOS use libc++ which we don't ship (yet).
-ifeq ($(OS), WINNT)
-LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/libstdc++-6.dll)
-else ifeq ($(OS), Linux)
-LIBSTDCXX_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/libstdc++.so.6)
-endif
-
-ifeq ($(OS), WINNT)
-LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/LLVM*.$(SHLIB_EXT)*)
-else
-LIBLLVM_DEP_NAME = $(call find_lib_name,$(build_shlibdir)/libLLVM-*jl.$(SHLIB_EXT)*)
-endif
-LIBLLVM_BUILD_DEPLIB = $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/$(LIBLLVM_DEP_NAME))
-LIBLLVM_INSTALL_DEPLIB = $(call dep_lib_path,$(bindir),$(private_shlibdir)/$(LIBLLVM_DEP_NAME))
 
 LIBJULIA_BUILD_DEPLIB := $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
 LIBJULIA_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia.$(JL_MAJOR_MINOR_SHLIB_EXT))
@@ -1515,10 +1478,11 @@ LIBJULIA_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia.$(
 LIBJULIA_DEBUG_BUILD_DEPLIB := $(call dep_lib_path,$(build_bindir),$(build_shlibdir)/libjulia-debug.$(JL_MAJOR_MINOR_SHLIB_EXT))
 LIBJULIA_DEBUG_INSTALL_DEPLIB := $(call dep_lib_path,$(bindir),$(shlibdir)/libjulia-debug.$(JL_MAJOR_MINOR_SHLIB_EXT))
 
-LOADER_BUILD_DEP_LIBS = $(call dep_lib_join,$(LIBGCC_BUILD_DEPLIB) $(LIBLLVM_BUILD_DEPLIB) $(LIBJULIA_BUILD_DEPLIB))
-LOADER_DEBUG_BUILD_DEP_LIBS = $(call dep_lib_join,$(LIBGCC_BUILD_DEPLIB) $(LIBLLVM_BUILD_DEPLIB) $(LIBJULIA_DEBUG_BUILD_DEPLIB))
-LOADER_INSTALL_DEP_LIBS = $(call dep_lib_join,$(LIBGCC_INSTALL_DEPLIB) $(LIBSTDCXX_INSTALL_DEPLIB) $(LIBLLVM_INSTALL_DEPLIB) $(LIBJULIA_INSTALL_DEPLIB))
-LOADER_DEBUG_INSTALL_DEP_LIBS = $(call dep_lib_join,$(LIBGCC_INSTALL_DEPLIB) $(LIBSTDCXX_INSTALL_DEPLIB) $(LIBLLVM_INSTALL_DEPLIB) $(LIBJULIA_DEBUG_INSTALL_DEPLIB))
+# Eventually, we'll need to build actual lists, but until then
+LOADER_BUILD_DEP_LIBS = $(LIBJULIA_BUILD_DEPLIB)
+LOADER_DEBUG_BUILD_DEP_LIBS = $(LIBJULIA_DEBUG_BUILD_DEPLIB)
+LOADER_INSTALL_DEP_LIBS = $(LIBJULIA_INSTALL_DEPLIB)
+LOADER_DEBUG_INSTALL_DEP_LIBS = $(LIBJULIA_DEBUG_INSTALL_DEPLIB)
 
 # Colors for make
 ifndef VERBOSE
